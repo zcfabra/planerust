@@ -1,5 +1,6 @@
 use std::fmt;
-
+use std::cell::RefCell;
+use std::rc::Rc;
 
 #[derive(Debug, Copy, Clone)]
 pub enum TokenType {
@@ -65,7 +66,8 @@ impl fmt::Display for Token{
     }
 }
 
-pub struct Scanner{
+pub struct Scanner<'a>{
+    parent: Rc<RefCell<&'a mut super::Rlox>>,
     source: String,
     tokens: Vec<Token>,
     start: usize,
@@ -76,9 +78,10 @@ pub struct Scanner{
 }
 
 
-impl Scanner{
-    pub fn new(source: &String)->Scanner{
-        Scanner{
+impl<'a> Scanner<'a>{
+    pub fn new(source: &String, parent: Rc<RefCell<&'a mut super::Rlox>>)->Scanner<'a>{
+        Scanner::<'a>{
+            parent: parent,
             source: source.to_string(),
             tokens: Vec::new(),
             start: 0,
@@ -107,7 +110,7 @@ impl Scanner{
 
     fn scan_token(&mut self,){
         // could be some issues w/ the char being 4 bytes in rust vs. 2 in most languages
-        let mut c: char = self.advance();
+        let  c: char = self.advance();
 
         match c {
             '('=>self.add_token(TokenType::LeftParen),
@@ -120,8 +123,23 @@ impl Scanner{
             '+'=>self.add_token(TokenType::Plus),
             ';'=>self.add_token(TokenType::Semicolon),
             '*'=>self.add_token(TokenType::Star),
-            _=>rlox::Rlox::error()
+            '!'=>if self.check_match('=') {self.add_token(TokenType::BangEqual)} else {self.add_token(TokenType::Bang)},
+            '='=>if self.check_match('=') {self.add_token(TokenType::EqualEqual)} else {self.add_token(TokenType::Equal)},
+            '<'=>if self.check_match('=') {self.add_token(TokenType::LessEqual)} else {self.add_token(TokenType::Less)},
+            '>'=>if self.check_match('=') {self.add_token(TokenType::GreaterEqual)} else {self.add_token(TokenType::Greater)},
+            
+            _=>{
+                let mut reference = self.parent.borrow_mut();
+                reference.error(self.line, "Unexpected Charcater".to_string())}
         }
+    }
+
+    fn check_match(&mut self, check_for: char)->bool{
+        if self.at_end() {return false}
+        let char_at: char = self.source.chars().nth(self.current).unwrap();
+        if char_at != check_for {return false};
+        self.current+=1;
+        return true;
     }
 
     pub fn get_tokens(&mut self)->Vec<Token>{

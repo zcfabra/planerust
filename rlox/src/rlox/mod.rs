@@ -3,10 +3,12 @@ use std::process::exit;
 use std::fs;
 use std::io;
 use std::io::Write;
-
+use std::rc::Rc;
+use std::ops::{DerefMut, Deref};
+use std::cell::RefCell;
 mod scanner;
 
-
+// #[derive(DerefMut)]
 pub struct Rlox {
     had_error:bool,
 }
@@ -23,7 +25,7 @@ impl Rlox{
         }
     }
 
-    pub fn run_file(&self,path: &String){
+    pub fn run_file(&mut self,path: &String){
         let contents = fs::read(path).ok().expect("Invalid file");
         self.run(&String::from_utf8(contents).expect("Failed"));
 
@@ -35,8 +37,8 @@ impl Rlox{
     
 
 
-    pub fn run(&self,source: &String){
-        let mut scanner:scanner::Scanner = scanner::Scanner::new(source);
+    pub fn run(&mut  self,source: &String){
+        let mut scanner:scanner::Scanner = scanner::Scanner::new(source, Rc::new(RefCell::new(self)));
         let tokens:Vec<scanner::Token> = scanner.get_tokens();
 
         for token in tokens{
