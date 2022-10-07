@@ -1,7 +1,20 @@
-use std::fmt;
+
+use std::fmt::{self, Error};
 use std::cell::RefCell;
 use std::rc::Rc;
+use std::collections::HashMap;
 
+#[derive(Clone, Debug)]
+pub enum Literal{
+    String(String),
+    Double(f64)
+}
+
+impl fmt::Display for Literal{
+    fn fmt(&self, f: &mut fmt::Formatter)->fmt::Result{
+        write!(f, "{:?}", self)
+    }
+}
 #[derive(Debug, Copy, Clone)]
 pub enum TokenType {
     
@@ -34,11 +47,11 @@ pub struct Token{
     token_type: TokenType,
     lexeme: String,
     line: usize,
-    literal: String,
+    literal: Literal,
 }
 
 impl Token{
-    pub fn new( token_type:TokenType, lexeme:String, line:usize, literal:String) -> Token{
+    pub fn new( token_type:TokenType, lexeme:String, line:usize, literal:Literal) -> Token{
         return Token {
             token_type: token_type,
             lexeme: lexeme,
@@ -48,7 +61,7 @@ impl Token{
     }
 
     pub fn to_string(&self)->String{
-        return self.token_type + " ".to_string() + &self.lexeme + &self.literal;
+        return self.token_type + " ".to_string() + &self.lexeme + &self.literal.to_string();
     }
 }
 
@@ -72,7 +85,8 @@ pub struct Scanner<'a>{
     tokens: Vec<Token>,
     start: usize,
     current: usize,
-    line: usize
+    line: usize,
+    keywords: HashMap<String, TokenType>
 
 
 }
@@ -80,13 +94,33 @@ pub struct Scanner<'a>{
 
 impl<'a> Scanner<'a>{
     pub fn new(source: &String, parent: Rc<RefCell<&'a mut super::Rlox>>)->Scanner<'a>{
+
+        let mut keywords: HashMap<String, TokenType> = HashMap::new();
+        keywords.insert("and".to_string(),    TokenType::And);
+        keywords.insert("class".to_string(),  TokenType::Class);
+        keywords.insert("else".to_string(),   TokenType::Else);
+        keywords.insert("false".to_string(),  TokenType::False);
+        keywords.insert("for".to_string(),    TokenType::For);
+        keywords.insert("func".to_string(),    TokenType::Func);
+        keywords.insert("if".to_string(),     TokenType::If);
+        keywords.insert("nil".to_string(),    TokenType::Nil);
+        keywords.insert("or".to_string(),     TokenType::Or);
+        keywords.insert("print".to_string(),  TokenType::Print);
+        keywords.insert("return".to_string(), TokenType::Return);
+        keywords.insert("super".to_string(),  TokenType::Super);
+        keywords.insert("this".to_string(),   TokenType::This);
+        keywords.insert("true".to_string(),   TokenType::True);
+        keywords.insert("var".to_string(),    TokenType::Var);
+        keywords.insert("while".to_string(),  TokenType::While);
+
         Scanner::<'a>{
             parent: parent,
             source: source.to_string(),
             tokens: Vec::new(),
             start: 0,
             current: 0,
-            line: 1
+            line: 1,
+            keywords: keywords
         }
     }
 
@@ -103,7 +137,7 @@ impl<'a> Scanner<'a>{
         unimplemented!();
     }
 
-    fn add_token_with_literal(&mut self, token:TokenType, literal:String){
+    fn add_token_with_literal(&mut self, token:TokenType, literal:Literal){
         let text:String = self.source[self.start..self.current].to_string();
         self.tokens.push(Token::new(token, text, self.line,literal))
     }
@@ -127,11 +161,108 @@ impl<'a> Scanner<'a>{
             '='=>if self.check_match('=') {self.add_token(TokenType::EqualEqual)} else {self.add_token(TokenType::Equal)},
             '<'=>if self.check_match('=') {self.add_token(TokenType::LessEqual)} else {self.add_token(TokenType::Less)},
             '>'=>if self.check_match('=') {self.add_token(TokenType::GreaterEqual)} else {self.add_token(TokenType::Greater)},
-            
+            '/'=>{if self.check_match('/') {
+               while self.peek() != '\n' && !self.at_end() {
+                self.advance();
+               }
+            } else {
+                self.add_token(TokenType::Slash);
+            }
+            },
+            ' ' | '\r' | '\t'=>{},
+            '\n'=>{
+                self.line+=1;
+            },
+            '"'=> self.stringy(),
+            'o'=>{
+                if self.peek() == 'r' {
+                    self.add_token(TokenType::Or)
+                }
+            }
             _=>{
-                let mut reference = self.parent.borrow_mut();
-                reference.error(self.line, "Unexpected Charcater".to_string())}
+                if self.is_digit(c){
+                    self.number();
+                } else if self.is_alpha(c){
+                    self.identifier()
+                }
+                 else {
+                    let mut reference = self.parent.borrow_mut();
+                    reference.error(self.line, "Unexpected character");
+            }
         }
+        }
+    }
+
+    fn identifier(&mut self){
+        while (self.is_alphanum(self.peek())) {self.advance();};
+        let text = self.source[self.start..self.current+1].to_string();
+        let token_type = self.keywords.get(&text);
+
+        if token_type.is_none() {self.add_token(TokenType::Identifier)} else{
+            self.add_token(*token_type.unwrap());
+        } 
+    }
+
+    fn is_alphanum(&self, c: char)->bool{
+        return self.is_alpha(c) || self.is_digit(c);
+    }
+
+    fn is_alpha(&self, c: char)-> bool {
+        return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_'
+    }
+
+    fn is_digit(&self, c: char)->bool{
+        return c >= '0' && c <= '9';
+    }
+
+    fn number(&mut self){
+        while self.is_digit(self.peek()){
+            self.advance();
+        }
+
+        if (self.peek() == '.'  && self.is_digit(self.peekNext())){
+            self.advance();
+            while self.is_digit(self.peek()){
+                self.advance();
+            }
+        }
+
+        let value = Literal::Double(self.source[self.start..self.current+1].parse().unwrap());
+
+        self.add_token_with_literal(TokenType::Number, value);
+
+
+    }
+
+    fn stringy(&mut self){
+        while self.peek() != '"' && !self.at_end(){
+            if self.peek() == '\n' {self.line+=1}
+            self.advance();
+        }
+
+        if self.at_end(){
+            let mut reference = self.parent.borrow_mut();
+            reference.error(self.line, "Unterminated string");
+            return;
+        }
+
+        self.advance();
+
+        let value = Literal::String(self.source[self.start+1..self.current+1].to_string());
+        self.add_token_with_literal(TokenType::String, value);
+    }
+    fn peek(&self)->char {
+        if self.at_end() {
+            return '\0';
+        } else {
+            return self.source.chars().nth(self.current).unwrap();
+        }
+
+    }
+
+    fn peekNext(&self)->char{
+        if self.current+1 >= self.source.len() {return '\0'}
+        return self.source.chars().nth(self.current+1).unwrap();
     }
 
     fn check_match(&mut self, check_for: char)->bool{

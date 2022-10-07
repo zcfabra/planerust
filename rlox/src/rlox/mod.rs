@@ -60,12 +60,12 @@ impl Rlox{
         }
     }
 
-    pub fn report(&mut self,line: usize, location: String, message: String){
+    pub fn report(&mut self,line: usize, location: String, message: &str){
         eprintln!("[{}] Error {}: {}", line, location, message);
         self.had_error=true;
     }
 
-    fn error(&mut self,line: usize, message: String){
+    fn error(&mut self,line: usize, message: &str){
         self.report(line, "".to_string(),message);
 
     }
