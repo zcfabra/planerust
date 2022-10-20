@@ -3,8 +3,9 @@
 use std::{
     io::{prelude::*, BufReader},
     net::{TcpListener, TcpStream},
-    thread::{self, Thread},
-    time::Duration
+    sync::{mpsc, Arc, Mutex},
+    thread::{self},
+
 };
 
 use std::fs;
@@ -30,24 +31,75 @@ fn handle_connection(mut stream: TcpStream){
 static  MAX_THREADS:usize = 10;
 
 struct ThreadPool{
-    num_threads: usize,
-    // threads: Vec<thread::Thread>,
+    workers: Vec<Worker>,
+    sender: Option<mpsc::Sender<Job>>
 
 }
 
 impl ThreadPool{
     fn new(num_threads:usize)->ThreadPool{
         assert!(num_threads>0);
-        ThreadPool{num_threads: num_threads}
-    }
 
-    fn execute<F>(&self, f: F )
+        let (sender, receiver) = mpsc::channel();
+
+        let receiver = Arc::new(Mutex::new(receiver));
+        
+        let mut workers = Vec::with_capacity(num_threads);
+        for id in 0..num_threads{
+            workers.push(Worker::new(id, Arc::clone(&receiver)));
+        }
+
+        ThreadPool{workers, sender:Some(sender)}
+    }
+    
+    fn execute<F>(&self, f: F)
     where
         F: FnOnce() + Send + 'static,
-    {
+        {
+            let job = Box::new(f);
+            self.sender.as_ref().unwrap().send(job).unwrap();
+        }
+    }
 
+impl Drop for ThreadPool{
+    fn drop(&mut self){
+        drop(self.sender.take());
+        for worker in &mut self.workers{
+            println!("Shutting down worker {}", worker.id);
+
+            if let Some(thread) = worker.thread.take(){
+                thread.join().unwrap();
+            }
+        }
     }
 }
+
+struct Worker{
+    id: usize,
+    thread: Option<thread::JoinHandle<()>>,
+}
+
+impl Worker{
+    fn new(id: usize, receiver: Arc<Mutex<mpsc::Receiver<Job>>>) -> Worker{
+        let thread = thread::spawn(move || loop{
+            let message = receiver.lock().unwrap().recv();
+
+            match message {
+                Ok(job)=>{
+                    println!("Worker {} got job; executing", id);
+                    job();
+                }
+                Err(_)=>{
+                    println!("Worker {} dissconnected, shutting down", id);
+                    break;
+                }
+            }
+        });
+        Worker {id, thread:Some(thread)}
+    }
+}
+
+type Job = Box<dyn FnOnce() + Send + 'static>;
 
 fn main(){
 
@@ -61,8 +113,8 @@ fn main(){
         // a stream is a connection between a client and server 
         let stream = stream.unwrap();
 
-        thread::spawn(||{
-            handle_connection(stream)
+        pool.execute(||{
+            handle_connection(stream);
         });
 
         // println!("connection established with {}", stream.peer_addr().unwrap());
