@@ -194,7 +194,7 @@ impl<'a> Scanner<'a>{
     }
 
     fn identifier(&mut self){
-        while (self.is_alphanum(self.peek())) {self.advance();};
+        while self.is_alphanum(self.peek()) {self.advance();};
         let text = self.source[self.start..self.current+1].to_string();
         let token_type = self.keywords.get(&text);
 
@@ -220,7 +220,7 @@ impl<'a> Scanner<'a>{
             self.advance();
         }
 
-        if (self.peek() == '.'  && self.is_digit(self.peekNext())){
+        if self.peek() == '.'  && self.is_digit(self.peek_next()){
             self.advance();
             while self.is_digit(self.peek()){
                 self.advance();
@@ -260,7 +260,7 @@ impl<'a> Scanner<'a>{
 
     }
 
-    fn peekNext(&self)->char{
+    fn peek_next(&self)->char{
         if self.current+1 >= self.source.len() {return '\0'}
         return self.source.chars().nth(self.current+1).unwrap();
     }
@@ -278,7 +278,6 @@ impl<'a> Scanner<'a>{
             if !self.at_end(){
                 self.start = self.current;
                 self.scan_token()
-                
             }
             break;
         }
@@ -286,4 +285,7 @@ impl<'a> Scanner<'a>{
         return self.tokens.clone();
 
     }
+
+
+
 }
