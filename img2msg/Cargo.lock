@@ -3,5 +3,5 @@
 version = 3
 
 [[package]]
-name = "testy"
+name = "img2msg"
 version = "0.1.0"
